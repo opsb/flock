@@ -38,15 +38,22 @@ defmodule Flock.Tcp.Client do
     )
   end
 
-  def send(from: node_id, to: recipients, message: message)
-      when is_node_id(node_id) and is_binary(message) do
-    Flock.Log.append(node_id, {:sent, message, to: recipients})
+  @spec send(
+          from: Topology.node_id(),
+          to: Topology.node_id() | list(Topology.node_id()),
+          request: Flock.Protocol.request()
+        ) :: :ok
+  def send(from: node_id, to: recipients, request: request) when is_node_id(node_id) do
+    Flock.Log.append(node_id, {:sent, request, to: recipients})
 
     recipients
     |> to_list()
-    |> Enum.map(fn recipient ->
-      GenServer.cast(via_tuple(node_id, recipient), {:send, message})
+    |> Enum.each(fn recipient ->
+      packet = Flock.Protocol.encode_request(request)
+      GenServer.cast(via_tuple(node_id, recipient), {:send, packet})
     end)
+
+    :ok
   end
 
   defp to_list(items) when is_list(items), do: items
@@ -99,10 +106,13 @@ defmodule Flock.Tcp.Client do
 
   #### HELPERS ####
 
+  @spec handle_response(Topology.node_id(), Topology.node_id(), String.t()) :: :ok
   defp handle_response(node_id, responder_id, response)
        when is_node_id(node_id) and is_node_id(responder_id) and is_binary(response) do
-    Flock.Log.append(node_id, {:received, response, from: responder_id})
-    NodeServer.handle_response(node_id, response)
+    decoded = Flock.Protocol.decode_response(response)
+    Flock.Log.append(node_id, {:received, decoded, from: responder_id})
+
+    NodeServer.handle_response(node_id, decoded)
   end
 
   defp lines_from_packet(packet) do

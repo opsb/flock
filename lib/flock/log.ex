@@ -1,17 +1,31 @@
 defmodule Flock.Log do
   @moduledoc "Distributes Flock Log messages to any processes that register as listeners"
   use GenServer
+  alias Flock.Topology
   import Flock.Topology, only: [is_node_id: 1]
 
   def start_link() do
     GenServer.start_link(__MODULE__, :ok, name: Flock.Log)
   end
 
+  @type entry ::
+          {:start_node, :requested | :ok | {:error, term()}}
+          | {:stop_node, :requested | :ok | {:error, term()}}
+          | {:received, Flock.Protocol.response(), [from: Topology.node_id()]}
+          | {:sent, Flock.Protocol.response(),
+             [to: Topology.node_id() | list(Topology.node_id())]}
+          | :became_leader
+          | {:following, Topology.node_id()}
+          | {:received_request, [request: Flock.Protocol.request()]}
+          | {:handled_request,
+             [request: Flock.Protocol.request(), response: Flock.Protocol.response()]}
+
   @impl GenServer
   def init(:ok) do
     {:ok, []}
   end
 
+  @spec append(Topology.node_id(), entry()) :: :ok
   def append(node_id, entry) when is_node_id(node_id) do
     GenServer.cast(Flock.Log, {:entry, node_id, entry})
   end

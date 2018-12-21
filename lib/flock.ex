@@ -6,6 +6,7 @@ defmodule Flock do
   alias Flock.NodesSupervisor
   alias Flock.NodeServer
   alias Flock.Topology
+  import Flock.Topology, only: [is_node_id: 1]
 
   def start(_start_type, _start_args) do
     import Supervisor.Spec
@@ -19,7 +20,7 @@ defmodule Flock do
     Supervisor.start_link(children, strategy: :one_for_one)
   end
 
-  def start_node(node_id, topology = %Topology{}) do
+  def start_node(node_id, topology = %Topology{}) when is_node_id(node_id) do
     Flock.Log.append(node_id, {:start_node, :requested})
 
     case NodesSupervisor.start_node(node_id, topology) do
@@ -28,7 +29,7 @@ defmodule Flock do
         {:ok, pid}
 
       {:error, error} ->
-        Flock.Log.append(node_id, {:start_node, :error, error})
+        Flock.Log.append(node_id, {:start_node, {:error, error}})
         {:error, translate_error(error)}
     end
   end
@@ -39,7 +40,7 @@ defmodule Flock do
 
     case result do
       :ok -> Flock.Log.append(node_id, {:stop_node, :ok})
-      {:error, error} -> Flock.Log.append(node_id, {:stop_node, :error, error})
+      {:error, error} -> Flock.Log.append(node_id, {:stop_node, {:error, error}})
     end
 
     result

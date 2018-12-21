@@ -3,6 +3,8 @@ defmodule Flock.Topology do
 
   @moduledoc "Represents the structure of a cluster"
 
+  @type node_id :: String.t()
+
   typedstruct do
     field(:nodes, %{String.t() => Node.t()}, enforce: true)
   end

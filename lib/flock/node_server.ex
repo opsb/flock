@@ -21,7 +21,7 @@ defmodule Flock.NodeServer do
       field(:status, Flock.NodeServer.status(), default: :noleader)
       field(:topology, Topology.t())
       field(:leader_waiters, list(), default: [])
-      field(:send_message, any())
+      field(:send_request, any())
       field(:timeout, integer())
     end
 
@@ -45,27 +45,31 @@ defmodule Flock.NodeServer do
 
   #### API ####
 
-  def start_link(node_id, topology = %Topology{}, send_message, timeout)
+  def start_link(node_id, topology = %Topology{}, send_request, timeout)
       when is_node_id(node_id) do
     state = %State{
       node_id: node_id,
       status: :noleader,
       topology: topology,
-      send_message: send_message,
+      send_request: send_request,
       timeout: timeout
     }
 
     GenServer.start_link(__MODULE__, state, name: via_tuple(node_id), debug: [])
   end
 
+  @spec handle_response(Topology.node_id(), Flock.Protocol.response()) :: :ok
   def handle_response(node_id, response) when is_node_id(node_id) do
     GenServer.call(via_tuple(node_id), {:response, response})
   end
 
+  @spec handle_request(Topology.node_id(), Flock.Protocol.request()) ::
+          {:response, Flock.Protocol.response()} | :noresponse
   def handle_request(node_id, request) when is_node_id(node_id) do
     GenServer.call(via_tuple(node_id), {:request, request})
   end
 
+  @spec leader(Topology.node_id()) :: Topology.node_id()
   def leader(node_id) when is_node_id(node_id) do
     GenServer.call(via_tuple(node_id), :leading, 10_000)
   end
@@ -120,38 +124,38 @@ defmodule Flock.NodeServer do
   end
 
   @impl GenServer
-  def handle_call({:request, "ALIVE?"}, _from, state = %State{}) do
-    {:reply, {:response, "FINETHANKS"}, begin_election(state)}
+  def handle_call({:request, :alive?}, _from, state = %State{}) do
+    {:reply, {:response, :finethanks}, begin_election(state)}
   end
 
   @impl GenServer
-  def handle_call({:request, "PING"}, _from, state = %State{}) do
-    {:reply, {:response, "PONG"}, state}
+  def handle_call({:request, :ping}, _from, state = %State{}) do
+    {:reply, {:response, :pong}, state}
   end
 
   @impl GenServer
-  def handle_call({:request, "IAMTHEKING:" <> leader_id}, _from, state = %State{})
+  def handle_call({:request, {:iamtheking, leader_id}}, _from, state = %State{})
       when is_node_id(leader_id) do
     {:reply, :noresponse, follow_leader(state, leader_id)}
   end
 
   @impl GenServer
-  def handle_call({:response, "FINETHANKS"}, _from, state = %State{status: :checking_candidates}) do
+  def handle_call({:response, :finethanks}, _from, state = %State{status: :checking_candidates}) do
     {:reply, :ok, wait_for_leader(state)}
   end
 
   @impl GenServer
-  def handle_call({:response, "FINETHANKS"}, _from, state = %State{}) do
+  def handle_call({:response, :finethanks}, _from, state = %State{}) do
     {:reply, :ok, state}
   end
 
   @impl GenServer
-  def handle_call({:response, "PONG"}, _from, state = %State{status: {:pinging, leader_id}}) do
+  def handle_call({:response, :pong}, _from, state = %State{status: {:pinging, leader_id}}) do
     {:reply, :ok, schedule_ping(state, leader_id)}
   end
 
   @impl GenServer
-  def handle_call({:response, "PONG"}, _from, state = %State{}) do
+  def handle_call({:response, :pong}, _from, state = %State{}) do
     {:reply, :ok, state}
   end
 
@@ -168,8 +172,8 @@ defmodule Flock.NodeServer do
 
   #### HELPERS ####
 
-  defp send_message(state = %State{}, args) do
-    state.send_message.(args)
+  defp send_request(state = %State{}, args) do
+    state.send_request.(args)
   end
 
   defp begin_election(state = %State{}) do
@@ -185,11 +189,11 @@ defmodule Flock.NodeServer do
   #### TRANSITIONS ####
 
   defp ask_candidates(state = %State{}, candidate_ids) when is_list(candidate_ids) do
-    send_message(
+    send_request(
       state,
       from: state.node_id,
       to: Topology.candidate_ids(state.topology, state.node_id),
-      message: "ALIVE?"
+      request: :alive?
     )
 
     Process.send_after(self(), :candidates_collected, state.timeout)
@@ -207,11 +211,11 @@ defmodule Flock.NodeServer do
       Flock.Log.append(state.node_id, :became_leader)
     end
 
-    send_message(
+    send_request(
       state,
       from: state.node_id,
       to: Topology.peer_ids(state.topology, state.node_id),
-      message: "IAMTHEKING:#{state.node_id}"
+      request: {:iamtheking, state.node_id}
     )
 
     state
@@ -235,7 +239,7 @@ defmodule Flock.NodeServer do
   end
 
   defp ping_leader(state = %State{}, leader_id) when is_node_id(leader_id) do
-    send_message(state, from: state.node_id, to: leader_id, message: "PING")
+    send_request(state, from: state.node_id, to: leader_id, request: :ping)
     Process.send_after(self(), :ping_timeout, 4 * state.timeout)
     State.update_status(state, {:pinging, leader_id})
   end

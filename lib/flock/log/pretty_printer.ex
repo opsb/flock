@@ -1,7 +1,9 @@
 defmodule Flock.Log.PrettyPrinter do
   @moduledoc "Pretty prints Flock log messages"
   use GenServer
+  alias Flock.Topology
   import Flock.Topology, only: [is_node_id: 1]
+  import Flock.Protocol, only: [encode_request: 1, encode_response: 1]
 
   def start_link() do
     GenServer.start_link(__MODULE__, :nostate)
@@ -22,42 +24,48 @@ defmodule Flock.Log.PrettyPrinter do
     {:noreply, :nostate}
   end
 
-  defp format({:flock, node_id, {:start_node, :requested}}) when is_node_id(node_id) do
-    {:ok, prefixed(node_id, "started")}
+  @spec format({:flock, Topology.node_id(), Flock.Log.entry()}) :: {:ok, String.t()} | :none
+  defp format({:flock, node_id, log_entry}) when is_node_id(node_id) do
+    case format_log_entry(log_entry) do
+      {:ok, formatted} -> {:ok, prefixed(node_id, formatted)}
+      :none -> :none
+    end
   end
 
-  defp format({:flock, node_id, {:received, message, [from: sender_id]}})
-       when is_node_id(node_id) do
-    {:ok, prefixed(node_id, "received #{message} from #{sender_id}")}
+  defp format_log_entry({:start_node, :requested}) do
+    {:ok, "started"}
   end
 
-  defp format({:flock, node_id, {:sent, message, [to: recipient_id]}}) when is_node_id(node_id) do
-    {:ok, prefixed(node_id, "sent #{message} to #{format_recipients(recipient_id)}")}
+  defp format_log_entry({:received, response, [from: sender_id]}) do
+    {:ok, "received #{encode_response(response)} from #{sender_id}"}
   end
 
-  defp format({:flock, node_id, {:stop_node, :ok}}) when is_node_id(node_id) do
-    {:ok, prefixed(node_id, "stopped")}
+  defp format_log_entry({:sent, request, [to: recipient_id]}) do
+    {:ok, "sent #{encode_request(request)} to #{format_recipients(recipient_id)}"}
   end
 
-  defp format({:flock, node_id, :became_leader}) when is_node_id(node_id) do
-    {:ok, prefixed(node_id, "became leader")}
+  defp format_log_entry({:stop_node, :ok}) do
+    {:ok, "stopped"}
   end
 
-  defp format({:flock, node_id, {:following, leader_id}}) when is_node_id(node_id) do
-    {:ok, prefixed(node_id, "following #{leader_id}")}
+  defp format_log_entry(:became_leader) do
+    {:ok, "became leader"}
   end
 
-  defp format({:flock, node_id, {:received_request, [request: request]}})
-       when is_node_id(node_id) do
-    {:ok, prefixed(node_id, "request: #{request}")}
+  defp format_log_entry({:following, leader_id}) do
+    {:ok, "following #{leader_id}"}
   end
 
-  defp format({:flock, node_id, {:handled_request, [request: _request, response: response]}})
-       when is_node_id(node_id) and response != :noresponse do
-    {:ok, prefixed(node_id, "response: #{response}")}
+  defp format_log_entry({:received_request, [request: request]}) do
+    {:ok, "request: #{encode_request(request)}"}
   end
 
-  defp format(_message) do
+  defp format_log_entry({:handled_request, [request: _request, response: response]})
+       when response != :noresponse do
+    {:ok, "response: #{encode_response(response)}"}
+  end
+
+  defp format_log_entry(_message) do
     :none
   end
 

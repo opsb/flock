@@ -3,6 +3,7 @@ defmodule Flock.Tcp.Server do
   use GenServer
 
   alias Flock.NodeServer
+  alias Flock.Topology
   import Flock.Topology, only: [is_node_id: 1]
 
   defmodule State do
@@ -23,6 +24,7 @@ defmodule Flock.Tcp.Server do
   def handle_info({:tcp, socket, packet}, state = %State{}) do
     packet
     |> requests_from_packet()
+    |> Enum.map(&Flock.Protocol.decode_request/1)
     |> Enum.each(&handle_request(&1, socket, state.node_id))
 
     {:noreply, state}
@@ -45,13 +47,15 @@ defmodule Flock.Tcp.Server do
     |> Enum.map(&String.trim/1)
   end
 
+  @spec handle_request(Flock.Protocol.request(), any(), Topology.node_id()) :: :ok
   defp handle_request(request, socket, node_id) do
     Flock.Log.append(node_id, {:received_request, request: request})
 
     case NodeServer.handle_request(node_id, request) do
       {:response, response} ->
         Flock.Log.append(node_id, {:handled_request, request: request, response: response})
-        :ok = :gen_tcp.send(socket, "#{response}\n")
+        packet = Flock.Protocol.encode_response(response) <> "\n"
+        :ok = :gen_tcp.send(socket, packet)
 
       :noresponse ->
         Flock.Log.append(node_id, {:handled_request, request: request})
