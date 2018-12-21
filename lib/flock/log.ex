@@ -11,6 +11,9 @@ defmodule Flock.Log do
   @type entry ::
           {:start_node, :requested | :ok | {:error, term()}}
           | {:stop_node, :requested | :ok | {:error, term()}}
+          | {:acceptor,
+             {:listening, :inet.ip4_address(), integer()}
+             | {:waiting_for_port, :inet.ip4_address(), integer()}}
           | {:received, Flock.Protocol.response(), [from: Topology.node_id()]}
           | {:sent, Flock.Protocol.response(),
              [to: Topology.node_id() | list(Topology.node_id())]}

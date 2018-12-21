@@ -36,6 +36,14 @@ defmodule Flock.Log.PrettyPrinter do
     {:ok, "started"}
   end
 
+  defp format_log_entry({:acceptor, {:listening, ip, port}}) do
+    {:ok, "listening on #{format_ip(ip)}:#{port}"}
+  end
+
+  defp format_log_entry({:acceptor, {:waiting_for_port, ip, port}}) do
+    {:ok, "waiting for #{format_ip(ip)}:#{port}"}
+  end
+
   defp format_log_entry({:received, response, [from: sender_id]}) do
     {:ok, "received #{encode_response(response)} from #{sender_id}"}
   end
@@ -65,8 +73,12 @@ defmodule Flock.Log.PrettyPrinter do
     {:ok, "response: #{encode_response(response)}"}
   end
 
-  defp format_log_entry(_message) do
+  defp format_log_entry(message) do
     :none
+  end
+
+  defp format_ip({a, b, c, d}) do
+    [a, b, c, d] |> Enum.join(".")
   end
 
   defp format_recipients(recipients) when is_list(recipients) do
